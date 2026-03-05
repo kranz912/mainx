@@ -1,6 +1,7 @@
 # MAIX
 
 Modular API Integration eXecutor.
+mainx is a lightweight Python framework for building API integrations using configuration rather than code.
 
 ## Install
 
