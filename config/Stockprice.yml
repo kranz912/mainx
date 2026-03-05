@@ -17,6 +17,7 @@ endpoints:
   quote:
     method: GET
     path: "/v7/finance/quote"
+    response_model: "examples.models:StockQuoteResponse"
     validation:
       required_json_fields: ["quoteResponse"]
 

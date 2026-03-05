@@ -4,9 +4,12 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from pydantic import ValidationError
 
 from .config_parser import parse_auth, parse_logging, parse_retries, parse_validation
 from .http_client import ConfigHttpClient
+from .schema import ClientConfigModel, model_to_dict
+from .secrets import SecretResolver, interpolate_config_values
 from .specs import EndpointSpec
 
 
@@ -38,44 +41,50 @@ class ConfigHttpLibrary:
     def _load_client(self, file_path: Path, client_name: str) -> ConfigHttpClient:
         raw = yaml.safe_load(file_path.read_text(encoding="utf-8")) or {}
 
-        base_url = raw.get("base_url")
-        if not base_url:
-            raise ValueError(f"Missing 'base_url' in config: {file_path}")
+        # First pass resolves env placeholders so provider configs can be read.
+        env_resolved = interpolate_config_values(raw, SecretResolver.env_only())
+        if not isinstance(env_resolved, dict):
+            raise ValueError(f"Config root must be an object: {file_path}")
 
-        default_timeout = float(raw.get("timeout", 10.0))
-        default_headers = raw.get("headers", {}) or {}
-        default_retries = parse_retries(raw.get("retries"))
-        default_auth = parse_auth(raw.get("auth"))
-        default_validation = parse_validation(raw.get("validation"))
-        default_logging = parse_logging(raw.get("logging"))
+        resolver = SecretResolver.from_config_dict(env_resolved.get("secrets"))
+        resolved = interpolate_config_values(env_resolved, resolver)
+        if not isinstance(resolved, dict):
+            raise ValueError(f"Config root must be an object: {file_path}")
 
-        endpoints_section = raw.get("endpoints", {}) or {}
+        try:
+            config = ClientConfigModel.model_validate(resolved)
+        except ValidationError as exc:
+            raise ValueError(f"Invalid config {file_path}: {exc}") from exc
+
+        default_timeout = config.timeout
+        default_headers = config.headers or {}
+        default_retries = parse_retries(model_to_dict(config.retries))
+        default_auth = parse_auth(model_to_dict(config.auth))
+        default_validation = parse_validation(model_to_dict(config.validation))
+        default_logging = parse_logging(model_to_dict(config.logging))
+
+        endpoints_section = config.endpoints or {}
         endpoints: dict[str, EndpointSpec] = {}
 
-        for endpoint_name, endpoint_raw in endpoints_section.items():
-            endpoint_data = endpoint_raw or {}
-            method = str(endpoint_data.get("method", "GET")).upper()
-            path = endpoint_data.get("path")
-            if not path:
-                raise ValueError(
-                    f"Missing 'path' for endpoint '{endpoint_name}' in {file_path}"
-                )
-
-            endpoint_timeout = endpoint_data.get("timeout")
+        for endpoint_name, endpoint_cfg in endpoints_section.items():
+            method = endpoint_cfg.method.upper()
+            path = endpoint_cfg.path
+            endpoint_timeout = endpoint_cfg.timeout
             endpoints[endpoint_name] = EndpointSpec(
                 method=method,
                 path=path,
                 timeout=float(endpoint_timeout) if endpoint_timeout is not None else None,
-                headers=endpoint_data.get("headers", {}) or {},
-                retries=parse_retries(endpoint_data.get("retries")),
-                auth=parse_auth(endpoint_data.get("auth")),
-                validation=parse_validation(endpoint_data.get("validation")),
-                logging=parse_logging(endpoint_data.get("logging")),
+                headers=endpoint_cfg.headers or {},
+                retries=parse_retries(model_to_dict(endpoint_cfg.retries)),
+                auth=parse_auth(model_to_dict(endpoint_cfg.auth)),
+                validation=parse_validation(model_to_dict(endpoint_cfg.validation)),
+                logging=parse_logging(model_to_dict(endpoint_cfg.logging)),
+                response_model=endpoint_cfg.response_model,
             )
 
         return ConfigHttpClient(
             name=client_name,
-            base_url=base_url,
+            base_url=config.base_url,
             default_timeout=default_timeout,
             default_headers=default_headers,
             default_retries=default_retries,

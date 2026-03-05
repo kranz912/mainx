@@ -14,6 +14,7 @@ endpoints:
   forecast:
     method: GET
     path: "/v1/forecast"
+    response_model: "examples.models:WeatherForecastResponse"
     validation:
       required_json_fields: ["latitude", "longitude"]
 

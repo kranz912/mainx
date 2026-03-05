@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import os
 import tempfile
 import textwrap
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from maix.client import AuthSpec, LoggingSpec, ResponseValidationSpec, RetrySpec
 from maix.manager import ConfigHttpLibrary
@@ -85,6 +87,56 @@ class TestConfigHttpLibrary(unittest.TestCase):
             config_dir = Path(tmp_dir)
             config_dir.joinpath("bad.yml").write_text(
                 "endpoints: {}\n", encoding="utf-8"
+            )
+
+            with self.assertRaises(ValueError):
+                ConfigHttpLibrary(config_dir=config_dir)
+
+    def test_env_interpolation_resolves_tokens(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config_dir = Path(tmp_dir)
+            config_dir.joinpath("demo.yml").write_text(
+                textwrap.dedent(
+                    """
+                    base_url: "https://api.example.com"
+                    headers:
+                      X-Api-Key: "${TEST_API_KEY}"
+                    auth:
+                      type: bearer
+                      token: "${ENV:TEST_API_KEY}"
+                    endpoints:
+                      details:
+                        method: GET
+                        path: "/v1/details"
+                    """
+                ).strip()
+                + "\n",
+                encoding="utf-8",
+            )
+
+            with patch.dict(os.environ, {"TEST_API_KEY": "secret-token"}, clear=False):
+                lib = ConfigHttpLibrary(config_dir=config_dir)
+
+            client = lib.get("demo")
+            self.assertEqual(client.default_headers["X-Api-Key"], "secret-token")
+            self.assertEqual(client.default_auth.token, "secret-token")
+
+    def test_schema_validation_rejects_unknown_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config_dir = Path(tmp_dir)
+            config_dir.joinpath("bad.yml").write_text(
+                textwrap.dedent(
+                    """
+                    base_url: "https://api.example.com"
+                    unknown_field: true
+                    endpoints:
+                      details:
+                        method: GET
+                        path: "/v1/details"
+                    """
+                ).strip()
+                + "\n",
+                encoding="utf-8",
             )
 
             with self.assertRaises(ValueError):

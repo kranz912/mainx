@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
 from .auth import AuthSpec
 from .logging import LoggingSpec
@@ -18,3 +19,4 @@ class EndpointSpec:
     auth: AuthSpec | None = None
     validation: ResponseValidationSpec | None = None
     logging: LoggingSpec | None = None
+    response_model: str | type[Any] | None = None

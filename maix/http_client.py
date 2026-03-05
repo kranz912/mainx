@@ -11,6 +11,7 @@ from urllib3.util.retry import Retry
 
 from .log_providers import build_logger
 from .queue import InMemoryRequestQueue, QueuedTask
+from .response_parsing import parse_typed_response
 from .specs import (
     AuthSpec,
     EndpointSpec,
@@ -116,6 +117,7 @@ class ConfigHttpClient:
         retries: RetrySpec | None = None,
         auth: AuthSpec | None = None,
         validation: ResponseValidationSpec | None = None,
+        response_model: str | type[Any] | None = None,
     ) -> int:
         task = QueuedTask(
             action="request",
@@ -130,6 +132,7 @@ class ConfigHttpClient:
                 "retries": retries,
                 "auth": auth,
                 "validation": validation,
+                "response_model": response_model,
             },
         )
         size = self._queue.enqueue(task)
@@ -150,6 +153,7 @@ class ConfigHttpClient:
         retries: RetrySpec | None = None,
         auth: AuthSpec | None = None,
         validation: ResponseValidationSpec | None = None,
+        response_model: str | type[Any] | None = None,
     ) -> int:
         task = QueuedTask(
             action="call",
@@ -164,6 +168,7 @@ class ConfigHttpClient:
                 "retries": retries,
                 "auth": auth,
                 "validation": validation,
+                "response_model": response_model,
             },
         )
         size = self._queue.enqueue(task)
@@ -253,6 +258,7 @@ class ConfigHttpClient:
         auth: AuthSpec | None = None,
         validation: ResponseValidationSpec | None = None,
         logging: LoggingSpec | None = None,
+        response_model: str | type[Any] | None = None,
     ) -> requests.Response:
         url = f"{self.base_url}/{path.lstrip('/')}"
         merged_headers = {**self.default_headers, **(headers or {})}
@@ -299,6 +305,12 @@ class ConfigHttpClient:
         if effective_validation is not None:
             effective_validation.validate(response)
 
+        if response_model is not None:
+            payload = response.json()
+            response.parsed = parse_typed_response(payload, response_model)
+        else:
+            response.parsed = None
+
         if request_logger is not None:
             request_logger.info(
                 "Request complete method=%s url=%s status=%s",
@@ -323,6 +335,7 @@ class ConfigHttpClient:
         auth: AuthSpec | None = None,
         validation: ResponseValidationSpec | None = None,
         logging: LoggingSpec | None = None,
+        response_model: str | type[Any] | None = None,
     ) -> requests.Response:
         if endpoint_name not in self.endpoints:
             raise KeyError(
@@ -339,6 +352,7 @@ class ConfigHttpClient:
         final_auth = auth if auth is not None else spec.auth
         final_validation = validation if validation is not None else spec.validation
         final_logging = logging if logging is not None else spec.logging
+        final_response_model = response_model if response_model is not None else spec.response_model
 
         return self.request(
             method=spec.method,
@@ -352,4 +366,5 @@ class ConfigHttpClient:
             auth=final_auth,
             validation=final_validation,
             logging=final_logging,
+            response_model=final_response_model,
         )

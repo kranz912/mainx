@@ -32,6 +32,8 @@ def main() -> None:
             params={"symbols": "AAPL"},
         )
         print("Stock status (direct):", stock_response.status_code)
+        if getattr(stock_response, "parsed", None) is not None:
+            print("Stock parsed type:", type(stock_response.parsed).__name__)
     except requests.RequestException as exc:
         print(f"Stock direct request failed: {exc}")
 

@@ -14,6 +14,12 @@ For CloudWatch logging support:
 pip install -e .[cloudwatch]
 ```
 
+For AWS SSM secret provider support:
+
+```bash
+pip install -e .[secrets]
+```
+
 ## Config Files
 
 Put one YAML file per API under `config/`.
@@ -177,6 +183,96 @@ logging:
 ```
 
 CloudWatch provider requires `boto3`. Install with `pip install -e .[cloudwatch]`.
+
+## Env Interpolation And Secrets
+
+MAIX resolves placeholders in YAML values:
+
+- `${API_KEY}` -> environment variable `API_KEY`
+- `${ENV:API_KEY}` -> explicit environment provider
+- `${SSM:/prod/service/api_key}` -> AWS SSM Parameter Store
+- `${VAULT:secret/data/app#api_key}` -> Vault path + field
+
+Example:
+
+```yaml
+base_url: "https://api.example.com"
+headers:
+    X-API-Key: "${ENV:API_KEY}"
+
+secrets:
+    ssm:
+        region: us-east-1
+        with_decryption: true
+    vault:
+        url: https://vault.example.com
+        token_env: VAULT_TOKEN
+
+endpoints:
+    current_user:
+        method: GET
+        path: "/v1/me"
+```
+
+Secret providers are optional. If `secrets` is omitted, env interpolation still works.
+
+## Schema Validation
+
+Configs are validated with pydantic models before clients are created.
+
+- Unknown keys fail fast.
+- Wrong types fail fast.
+- Errors include field-level context from pydantic.
+
+This prevents silent misconfiguration when editing YAML.
+
+## Typed Response Parsing
+
+Each endpoint can define an optional `response_model`.
+
+```yaml
+endpoints:
+    get_user:
+        method: GET
+        path: "/v1/users/{id}"
+    response_model: "examples.models:WeatherForecastResponse"
+```
+
+Then:
+
+```python
+response = api.myclient.call("get_user", path_params={"id": 1})
+print(response.status_code)
+print(response.parsed)  # pydantic/dataclass instance
+```
+
+You can also pass `response_model=` at runtime to `request(...)` or `call(...)`.
+Included examples are in `examples/models.py` and are referenced in `config/weather.yml` and `config/Stockprice.yml`.
+
+## OpenAPI Bridge
+
+### Import OpenAPI -> MAIX config
+
+```python
+from maix import import_openapi_to_maix_config
+
+maix_config = import_openapi_to_maix_config(openapi_document)
+```
+
+### Export MAIX config -> OpenAPI subset
+
+```python
+from maix import export_maix_to_openapi
+
+openapi_subset = export_maix_to_openapi(maix_config, title="My API", version="1.0.0")
+```
+
+CLI helper:
+
+```bash
+python tools/openapi_bridge.py import --input openapi.yaml --output config/generated.yml
+python tools/openapi_bridge.py export --input config/stockprice.yml --output openapi.generated.yaml
+```
 
 ## In-Memory Queue
 

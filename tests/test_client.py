@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 import time
 import unittest
 from unittest.mock import Mock
@@ -246,6 +247,55 @@ class TestConfigHttpClient(unittest.TestCase):
             "https://example.com/log-test",
             200,
         )
+
+    def test_typed_response_parsing_sets_parsed_attribute(self) -> None:
+        @dataclass
+        class User:
+            id: int
+            name: str
+
+        endpoint = EndpointSpec(method="GET", path="/user", response_model=User)
+        client = ConfigHttpClient(
+            name="test",
+            base_url="https://example.com",
+            endpoints={"get_user": endpoint},
+        )
+
+        response = Mock()
+        response.status_code = 200
+        response.headers = {"Content-Type": "application/json"}
+        response.json.return_value = {"id": 7, "name": "Alice"}
+        client._session.request = Mock(return_value=response)
+
+        actual = client.call("get_user")
+
+        self.assertIs(actual, response)
+        self.assertIsNotNone(actual.parsed)
+        self.assertEqual(actual.parsed.id, 7)
+        self.assertEqual(actual.parsed.name, "Alice")
+
+    def test_typed_response_parsing_from_string_model_ref(self) -> None:
+        endpoint = EndpointSpec(
+            method="GET",
+            path="/weather",
+            response_model="examples.models:WeatherForecastResponse",
+        )
+        client = ConfigHttpClient(
+            name="test",
+            base_url="https://example.com",
+            endpoints={"forecast": endpoint},
+        )
+
+        response = Mock()
+        response.status_code = 200
+        response.headers = {"Content-Type": "application/json"}
+        response.json.return_value = {"latitude": 52.52, "longitude": 13.41}
+        client._session.request = Mock(return_value=response)
+
+        actual = client.call("forecast")
+
+        self.assertAlmostEqual(actual.parsed.latitude, 52.52)
+        self.assertAlmostEqual(actual.parsed.longitude, 13.41)
 
 
 if __name__ == "__main__":
