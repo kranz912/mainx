@@ -1,0 +1,22 @@
+base_url: "https://api.open-meteo.com"
+timeout: 10
+headers:
+  Accept: "application/json"
+retries:
+  total: 2
+  backoff_factor: 0.3
+  status_forcelist: [429, 500, 502, 503, 504]
+validation:
+  raise_for_status: true
+  content_type_contains: "application/json"
+
+endpoints:
+  forecast:
+    method: GET
+    path: "/v1/forecast"
+    validation:
+      required_json_fields: ["latitude", "longitude"]
+
+  current_weather_by_coords:
+    method: GET
+    path: "/v1/forecast"

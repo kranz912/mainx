@@ -1,0 +1,41 @@
+base_url: "https://query1.finance.yahoo.com"
+timeout: 10
+headers:
+  Accept: "application/json"
+retries:
+  total: 2
+  backoff_factor: 0.3
+validation:
+  raise_for_status: true
+  content_type_contains: "application/json"
+logging:
+  provider: file
+  level: INFO
+  file_path: "logs/stockprice.log"
+
+endpoints:
+  quote:
+    method: GET
+    path: "/v7/finance/quote"
+    validation:
+      required_json_fields: ["quoteResponse"]
+
+  chart:
+    method: GET
+    path: "/v8/finance/chart/{symbol}"
+
+# Example auth options you can add:
+# auth:
+#   type: bearer
+#   token: "your-token"
+#
+# auth:
+#   type: basic
+#   username: "user"
+#   password: "pass"
+#
+# auth:
+#   type: api_key
+#   in: query
+#   key: "apikey"
+#   value: "your-key"
